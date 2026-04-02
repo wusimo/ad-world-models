@@ -1,0 +1,56 @@
+# World Model Configuration (Vista/GenAD-style)
+# References:
+#   - "Vista: A Generalizable Driving World Model"
+#   - "GenAD: Generalized Predictive Model for Autonomous Driving"
+
+data:
+  dataroot: ./data/nuscenes
+  version: v1.0-mini
+  split: mini_train
+  image_size: [224, 400]
+  future_steps: 6
+
+# BEV encoder
+bev:
+  in_channels: 256
+  bev_channels: 256
+  bev_size: [200, 200]
+  bev_range: [-50.0, -50.0, 50.0, 50.0]
+
+# VAE for latent BEV encoding
+vae:
+  in_channels: 256
+  latent_dim: 64
+  hidden_dims: [128, 256, 512]
+  kl_weight: 0.001
+
+# Temporal transformer (predicts future latent states)
+temporal:
+  latent_dim: 64
+  bev_latent_size: [25, 25]  # downsampled BEV spatial dims
+  num_heads: 8
+  num_layers: 4
+  ffn_dim: 256
+  dropout: 0.1
+  max_future_steps: 12
+
+# Action conditioning
+action:
+  dim: 3  # [steering, acceleration, yaw_rate]
+  embed_dim: 64
+
+# Diffusion for generation quality (optional)
+diffusion:
+  enabled: false
+  num_timesteps: 100
+  beta_start: 0.0001
+  beta_end: 0.02
+
+# MPC planning in latent space
+mpc:
+  horizon: 6
+  num_samples: 64
+  temperature: 0.1
+  collision_cost_weight: 10.0
+  progress_cost_weight: 1.0
+  comfort_cost_weight: 0.5

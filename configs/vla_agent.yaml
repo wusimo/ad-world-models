@@ -1,0 +1,43 @@
+# VLA Agent Configuration (DriveVLM-style)
+# Reference: "DriveVLM: The Convergence of Autonomous Driving and Large Vision-Language Models"
+
+data:
+  dataroot: ./data/nuscenes
+  version: v1.0-mini
+  split: mini_train
+  image_size: [224, 400]
+  future_steps: 6
+
+# Vision encoder
+vision:
+  backbone: resnet50
+  pretrained: true
+  feature_dim: 256
+
+# BEV encoder (shared with E2E planner)
+bev:
+  in_channels: 256
+  bev_channels: 256
+  bev_size: [200, 200]
+  bev_range: [-50.0, -50.0, 50.0, 50.0]
+
+# Language model for Chain-of-Thought reasoning
+language_model:
+  # Uses a lightweight causal LM for demo purposes
+  # In production: InternVL, LLaMA-based, or GPT-4V
+  name: gpt2  # placeholder — swap for larger VLM
+  max_new_tokens: 256
+
+# Chain-of-Thought reasoning stages
+cot_stages:
+  - scene_description     # "What is in the scene?"
+  - critical_objects       # "Which objects are critical?"
+  - behavior_prediction   # "What will critical objects do?"
+  - ego_decision          # "What should the ego vehicle do?"
+  - trajectory_plan       # "Generate waypoints"
+
+# Planning head (converts reasoning to trajectory)
+planning:
+  future_steps: 6
+  hidden_dim: 256
+  use_language_features: true
