@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--sample_idx", type=int, default=5)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--save_dir", type=str, default="outputs/vla_agent")
+    parser.add_argument("--weights", type=str, default="outputs/vla_agent/trained.pt")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -72,6 +73,15 @@ def main():
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
     print(f"  Total parameters: {total:.1f}M")
     print(f"  Trainable parameters: {trainable:.1f}M (LM frozen)")
+
+    weights_path = Path(args.weights)
+    trained = False
+    if weights_path.exists():
+        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
+        print(f"  Loaded trained weights from {weights_path}")
+        trained = True
+    else:
+        print(f"  No trained weights at {weights_path} — using random init")
 
     # Run Chain-of-Thought reasoning
     print("\n[3/4] Running Chain-of-Thought reasoning...")

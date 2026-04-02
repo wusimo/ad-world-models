@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--sample_idx", type=int, default=5)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--save_dir", type=str, default="outputs/world_model")
+    parser.add_argument("--weights", type=str, default="outputs/world_model/trained.pt")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -82,6 +83,16 @@ def main():
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"  Model parameters: {total_params:.1f}M")
 
+    # Load trained weights
+    weights_path = Path(args.weights)
+    trained = False
+    if weights_path.exists():
+        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
+        print(f"  Loaded trained weights from {weights_path}")
+        trained = True
+    else:
+        print(f"  No trained weights at {weights_path} — using random init")
+
     # VAE reconstruction test
     print("\n[4/5] Testing VAE reconstruction + future imagination...")
     with torch.no_grad():
@@ -132,7 +143,7 @@ def main():
         current_bev=current_bev_np,
         imagined_sequences=imagined,
         planned_actions=action_arrays,
-        title="World Model: Imagined Futures Under Different Actions (Untrained)",
+        title=f"World Model: Imagined Futures Under Different Actions ({'Trained' if trained else 'Untrained'})",
         save_path=str(save_dir / "imagined_futures.png"),
     )
 
@@ -142,7 +153,7 @@ def main():
         current_bev=current_bev_np,
         planned_bev_sequence=planned_bev,
         planned_actions=planned_actions,
-        title="World Model: MPC-Planned Sequence (Untrained)",
+        title=f"World Model: MPC-Planned Sequence ({'Trained' if trained else 'Untrained'})",
         save_path=str(save_dir / "mpc_planned.png"),
     )
 

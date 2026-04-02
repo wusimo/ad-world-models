@@ -25,6 +25,8 @@ def main():
     parser.add_argument("--sample_idx", type=int, default=5)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--save_dir", type=str, default="outputs/e2e_planner")
+    parser.add_argument("--weights", type=str, default="outputs/e2e_planner/trained.pt",
+                        help="Path to trained weights (skip if not found)")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -66,6 +68,16 @@ def main():
     total_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"  Model parameters: {total_params:.1f}M")
 
+    # Load trained weights
+    weights_path = Path(args.weights)
+    if weights_path.exists():
+        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
+        print(f"  Loaded trained weights from {weights_path}")
+        trained = True
+    else:
+        print(f"  No trained weights found at {weights_path} — using random init")
+        trained = False
+
     # Inference
     print("\n[3/4] Running inference...")
     with torch.no_grad():
@@ -84,7 +96,8 @@ def main():
     print(f"  Predicted trajectory ({len(traj)} steps):")
     for t, (x, y) in enumerate(traj):
         print(f"    t+{t+1}: ({x:+.2f}, {y:+.2f}) m")
-    print(f"  Note: Model is untrained — predictions are random. GT is shown for reference.")
+    if not trained:
+        print(f"  Note: Model is untrained — predictions are random. GT is shown for reference.")
 
     # Visualize
     print("\n[4/4] Generating visualizations...")
@@ -107,7 +120,7 @@ def main():
         gt_trajectory=gt_trajectory,
         lidar_points=lidar_points,
         bev_features=bev_features,
-        title="UniAD End-to-End Planner (Untrained — GT annotations shown)",
+        title=f"UniAD End-to-End Planner ({'Trained' if trained else 'Untrained'} — GT annotations shown)",
         save_path=str(save_dir / "e2e_planner_output.png"),
     )
 
