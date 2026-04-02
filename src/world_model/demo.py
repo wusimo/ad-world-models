@@ -86,18 +86,31 @@ def main():
     # Load trained weights
     weights_path = Path(args.weights)
     trained = False
+    bev_mean, bev_std = 0.0, 1.0
     if weights_path.exists():
-        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
+        ckpt = torch.load(weights_path, map_location=device, weights_only=False)
+        if isinstance(ckpt, dict) and "model" in ckpt:
+            model.load_state_dict(ckpt["model"])
+            bev_mean = float(ckpt.get("bev_mean", 0.0))
+            bev_std = float(ckpt.get("bev_std", 1.0))
+            print(f"  BEV normalization: mean={bev_mean:.5f}, std={bev_std:.5f}")
+        else:
+            model.load_state_dict(ckpt)
         print(f"  Loaded trained weights from {weights_path}")
         trained = True
     else:
         print(f"  No trained weights at {weights_path} — using random init")
 
+    # Normalize BEV for the world model (same as training)
+    bev_normalized = (bev - bev_mean) / bev_std
+
     # VAE reconstruction test
     print("\n[4/5] Testing VAE reconstruction + future imagination...")
     with torch.no_grad():
-        z, mu, logvar = model.encode(bev)
-        bev_recon = model.decode(z)
+        z, mu, logvar = model.encode(bev_normalized)
+        bev_recon_norm = model.decode(z)
+        # Denormalize for comparison
+        bev_recon = bev_recon_norm * bev_std + bev_mean
         recon_error = (bev - bev_recon).abs().mean().item()
         print(f"  Reconstruction error (untrained): {recon_error:.4f}")
         print(f"  Latent shape: {z.shape}")
@@ -115,7 +128,9 @@ def main():
     action_arrays = {}
     for name, actions in action_scenarios.items():
         with torch.no_grad():
-            bev_future = model.imagine(bev, actions)
+            bev_future_norm = model.imagine(bev_normalized, actions)
+            # Denormalize for visualization
+            bev_future = bev_future_norm * bev_std + bev_mean
         imagined[name] = bev_future[0].cpu().numpy()
         action_arrays[name] = actions[0].cpu().numpy()
         print(f"  {name}: imagined {bev_future.shape[1]} future frames")
@@ -123,7 +138,7 @@ def main():
     # MPC planning
     print("\n[5/5] Running MPC planning in latent space...")
     with torch.no_grad():
-        plan_result = model.plan(bev)
+        plan_result = model.plan(bev_normalized)
 
     planned_actions = plan_result["planned_actions"][0].cpu().numpy()
     print(f"  Planning cost: {plan_result['planning_cost'][0]:.4f}")
@@ -148,7 +163,7 @@ def main():
     )
 
     # MPC planned sequence
-    planned_bev = plan_result["planned_bev_sequence"][0].cpu().numpy()
+    planned_bev = (plan_result["planned_bev_sequence"][0] * bev_std + bev_mean).cpu().numpy()
     vis.visualize_mpc_planning(
         current_bev=current_bev_np,
         planned_bev_sequence=planned_bev,

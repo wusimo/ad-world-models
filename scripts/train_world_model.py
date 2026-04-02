@@ -25,14 +25,31 @@ class BEVCacheDataset(Dataset):
         self.cache_dir = Path(cache_dir)
         self.index = torch.load(self.cache_dir / "index.pt", weights_only=False)
 
+        # Compute global stats for normalization (BEV values are tiny ~0.006)
+        print("  Computing BEV normalization stats...")
+        all_means, all_stds = [], []
+        for idx in range(min(50, len(self.index))):
+            d = torch.load(self.cache_dir / f"{idx:04d}.pt", weights_only=False)
+            bev = d["bev"].float()
+            all_means.append(bev.mean())
+            all_stds.append(bev.std())
+        self.bev_mean = sum(all_means) / len(all_means)
+        self.bev_std = max(sum(all_stds) / len(all_stds), 1e-6)
+        print(f"  BEV stats: mean={self.bev_mean:.5f}, std={self.bev_std:.5f}")
+
     def __len__(self):
         return len(self.index)
 
     def __getitem__(self, idx):
         data = torch.load(self.cache_dir / f"{idx:04d}.pt", weights_only=False)
+        bev = data["bev"].float()
+        # Normalize to zero-mean, unit-variance for stable VAE training
+        bev = (bev - self.bev_mean) / self.bev_std
         return {
-            "bev": data["bev"].float(),
+            "bev": bev,
             "future_trajectory": data["future_trajectory"].float(),
+            "bev_mean": self.bev_mean,
+            "bev_std": self.bev_std,
         }
 
 
@@ -165,9 +182,14 @@ def main():
     print("\n=== Phase 2: Temporal Prediction ===")
     train_temporal(model, dataloader, device, num_epochs=args.temporal_epochs)
 
-    # Save
-    torch.save(model.state_dict(), args.output)
+    # Save model + normalization stats
+    torch.save({
+        "model": model.state_dict(),
+        "bev_mean": dataset.bev_mean,
+        "bev_std": dataset.bev_std,
+    }, args.output)
     print(f"\nSaved trained model to {args.output}")
+    print(f"  BEV normalization: mean={dataset.bev_mean:.5f}, std={dataset.bev_std:.5f}")
 
 
 if __name__ == "__main__":
