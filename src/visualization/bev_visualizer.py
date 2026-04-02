@@ -286,6 +286,7 @@ class BEVVisualizer:
         gt_trajectory: np.ndarray = None,
         lidar_points: np.ndarray = None,
         bev_features: np.ndarray = None,
+        trained: bool = False,
         title: str = "UniAD End-to-End Planner",
         save_path: str = None,
     ) -> plt.Figure:
@@ -378,7 +379,7 @@ class BEVVisualizer:
         self.draw_trajectory_with_collision(ax3, traj, col)
 
         # Also draw predicted trajectory as solid line
-        self.draw_trajectory(ax3, traj, color="#00ff88", label="Predicted (untrained)",
+        self.draw_trajectory(ax3, traj, color="#00ff88", label=f"Predicted ({'trained' if trained else 'untrained'})",
                            linewidth=2.5, markersize=6, zorder=95)
 
         # Auto-zoom: fit both GT and predicted trajectories with padding

@@ -137,7 +137,7 @@ def main():
     ax2 = fig.add_subplot(gs[0, 1])
     ax2.set_facecolor("#1e1e2e")
     ax2.axis("off")
-    ax2.set_title("Chain-of-Thought Reasoning (GPT-2 placeholder)", fontsize=13,
+    ax2.set_title(f"Chain-of-Thought Reasoning (GPT-2{' — trained' if trained else ' placeholder'})", fontsize=13,
                   color="white", fontweight="bold")
 
     stage_colors = {
@@ -198,7 +198,7 @@ def main():
                        linewidth=3.0, marker="s", markersize=7, zorder=85)
 
     # VLA planned trajectory
-    vis.draw_trajectory(ax3, traj, color="#00ff88", label="VLA Agent (untrained)",
+    vis.draw_trajectory(ax3, traj, color="#00ff88", label=f"VLA Agent ({'trained' if trained else 'untrained'})",
                        linewidth=2.5, markersize=6, zorder=95)
 
     # Auto-zoom
@@ -210,7 +210,7 @@ def main():
     ax3.legend(loc="upper right", fontsize=9, facecolor="#333", edgecolor="white",
               labelcolor="white", framealpha=0.8)
 
-    fig.suptitle("DriveVLM — Vision-Language-Action Agent (Untrained)",
+    fig.suptitle(f"DriveVLM — Vision-Language-Action Agent ({'Trained' if trained else 'Untrained'})",
                 fontsize=16, fontweight="bold", color="white", y=0.98)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(str(save_dir / "vla_agent_output.png"), dpi=150,

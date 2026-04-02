@@ -120,6 +120,7 @@ def main():
         gt_trajectory=gt_trajectory,
         lidar_points=lidar_points,
         bev_features=bev_features,
+        trained=trained,
         title=f"UniAD End-to-End Planner ({'Trained' if trained else 'Untrained'} — GT annotations shown)",
         save_path=str(save_dir / "e2e_planner_output.png"),
     )
