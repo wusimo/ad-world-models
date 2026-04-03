@@ -12,6 +12,7 @@ import argparse
 import yaml
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 from src.world_model.model import DrivingWorldModel
@@ -28,6 +29,8 @@ def main():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--save_dir", type=str, default="outputs/world_model")
     parser.add_argument("--weights", type=str, default="outputs/world_model/trained.pt")
+    parser.add_argument("--vista_dir", type=str, default="outputs/vista",
+                        help="Path to Vista outputs (from scripts/demo_vista.py)")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -180,10 +183,117 @@ def main():
         save_path=str(save_dir / "camera_views.png"),
     )
 
+    # Vista pretrained world model comparison (if available)
+    vista_dir = Path(args.vista_dir)
+    vista_virtual = vista_dir / "virtual" / "grids"
+    vista_real = vista_dir / "real" / "grids"
+    if vista_virtual.exists() and vista_real.exists():
+        import glob
+        virtual_grids = sorted(glob.glob(str(vista_virtual / "*.png")))
+        real_grids = sorted(glob.glob(str(vista_real / "*.png")))
+
+        if virtual_grids and real_grids:
+            from PIL import Image as PILImage
+            print("\n  Adding Vista pretrained world model comparison...")
+
+            virtual_img = np.array(PILImage.open(virtual_grids[0]))
+            real_img = np.array(PILImage.open(real_grids[0]))
+
+            # Load individual frames for filmstrip
+            vista_virtual_imgs = sorted(glob.glob(str(vista_dir / "virtual" / "images" / "*_0000.png")))
+            vista_frames = []
+            for i in range(min(6, 25)):
+                fp = vista_dir / "virtual" / "images" / f"NUSCENES_000000_{i:04d}.png"
+                if fp.exists():
+                    vista_frames.append(np.array(PILImage.open(fp)))
+
+            # Create combined figure: BEV model (top) vs Vista pixel model (bottom)
+            fig_combined = plt.figure(figsize=(28, 18), facecolor="#1a1a1a")
+            gs = fig_combined.add_gridspec(3, 1, height_ratios=[1, 1, 1.2])
+
+            # Row 1: Camera input
+            ax_cam = fig_combined.add_subplot(gs[0])
+            # Show front camera
+            front_img = camera_images[0].transpose(1, 2, 0)
+            front_img = front_img * IMG_STD + IMG_MEAN
+            front_img = np.clip(front_img, 0, 1)
+            ax_cam.imshow(front_img)
+            ax_cam.set_title("Input: nuScenes Front Camera", fontsize=14,
+                           color="white", fontweight="bold")
+            ax_cam.axis("off")
+
+            # Row 2: BEV world model (our implementation)
+            ax_bev = fig_combined.add_subplot(gs[1])
+            # Show current BEV + first imagined scenario side by side
+            bev_display = np.linalg.norm(current_bev_np, axis=0)
+            bev_vmin, bev_vmax = np.percentile(bev_display, [2, 98])
+            bev_display = np.clip((bev_display - bev_vmin) / (bev_vmax - bev_vmin + 1e-8), 0, 1)
+
+            first_scenario = list(imagined.values())[0]
+            n_show = min(6, first_scenario.shape[0])
+            combined_bev = [bev_display]
+            for t in range(n_show):
+                frame = np.linalg.norm(first_scenario[t], axis=0)
+                fmin, fmax = np.percentile(frame, [2, 98])
+                combined_bev.append(np.clip((frame - fmin) / (fmax - fmin + 1e-8), 0, 1))
+            combined_bev = np.concatenate(combined_bev, axis=1)
+
+            ax_bev.imshow(combined_bev, cmap="inferno", origin="lower", aspect="auto")
+            ax_bev.set_title("BEV World Model (Our Implementation) — Abstract Feature Space",
+                           fontsize=14, color="#ff9800", fontweight="bold")
+            ax_bev.axis("off")
+            # Add labels
+            w = bev_display.shape[1]
+            for i, label in enumerate(["t=0"] + [f"t+{t+1}" for t in range(n_show)]):
+                ax_bev.text(w * i + w // 2, 5, label, fontsize=9, color="white",
+                           ha="center", va="top", fontweight="bold",
+                           path_effects=[__import__('matplotlib').patheffects.withStroke(linewidth=2, foreground="black")])
+
+            # Row 3: Vista world model (pretrained, pixel-space)
+            ax_vista = fig_combined.add_subplot(gs[2])
+            if vista_frames and len(vista_frames) >= 6:
+                # Show filmstrip of vista frames
+                step_indices = [0, 4, 9, 14, 19, 24]
+                frames_to_show = []
+                for si in step_indices:
+                    fp = vista_dir / "virtual" / "images" / f"NUSCENES_000000_{si:04d}.png"
+                    if fp.exists():
+                        frames_to_show.append(np.array(PILImage.open(fp)))
+                if frames_to_show:
+                    # Resize all to same height
+                    target_h = min(f.shape[0] for f in frames_to_show)
+                    resized = []
+                    for f in frames_to_show:
+                        if f.shape[0] != target_h:
+                            ratio = target_h / f.shape[0]
+                            new_w = int(f.shape[1] * ratio)
+                            f = np.array(PILImage.fromarray(f).resize((new_w, target_h)))
+                        resized.append(f)
+                    filmstrip = np.concatenate(resized, axis=1)
+                    ax_vista.imshow(filmstrip)
+            else:
+                ax_vista.imshow(virtual_img)
+
+            ax_vista.set_title("Vista World Model (Pretrained, NeurIPS 2024) — Photorealistic Pixel Space",
+                             fontsize=14, color="#00ff88", fontweight="bold")
+            ax_vista.axis("off")
+
+            fig_combined.suptitle("World Model Comparison: BEV Feature Space vs Pixel Space",
+                                fontsize=18, fontweight="bold", color="white", y=0.98)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            fig_combined.savefig(str(save_dir / "world_model_comparison.png"),
+                               dpi=150, bbox_inches="tight", facecolor="#1a1a1a")
+            print(f"Saved to {save_dir}/world_model_comparison.png")
+    else:
+        print("\n  Vista outputs not found. Run Vista demo first for pixel-space comparison:")
+        print(f"    python scripts/demo_vista.py --vista_dir /path/to/Vista")
+
     print(f"\n  Results saved to {save_dir}/")
     print(f"    - camera_views.png")
     print(f"    - imagined_futures.png")
     print(f"    - mpc_planned.png")
+    if (save_dir / "world_model_comparison.png").exists():
+        print(f"    - world_model_comparison.png (BEV vs Vista)")
 
     print("\n" + "=" * 60)
     print("  Architecture Summary")

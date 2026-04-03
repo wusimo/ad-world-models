@@ -94,7 +94,6 @@ def main():
     for stage, response in outputs["reasoning"].items():
         print(f"\n--- {stage.upper().replace('_', ' ')} ---")
         text = response if isinstance(response, str) else response[0]
-        # Trim repetitive/garbage output from untrained GPT-2
         text = text[:200].strip()
         print(f"  {text}")
 
@@ -103,8 +102,9 @@ def main():
     for t, (x, y) in enumerate(traj):
         print(f"  t+{t+1}: ({x:+.2f}, {y:+.2f}) m")
 
-    print("\n  Note: GPT-2 is a placeholder LM (not a driving VLM).")
-    print("  In production, use InternVL, LLaMA-Drive, or similar.")
+    if not trained:
+        print("\n  Note: GPT-2 is a placeholder LM (not a driving VLM).")
+        print("  In production, use InternVL, LLaMA-Drive, or similar.")
 
     # Visualize
     print("\n[4/4] Generating visualization...")
@@ -160,7 +160,7 @@ def main():
         text = response if isinstance(response, str) else response[0]
         text = text[:120].strip().replace("\n", " ")
         if not text:
-            text = "(empty — untrained model)"
+            text = "(no output)" if trained else "(empty — untrained model)"
         color = stage_colors.get(stage, "white")
         icon = stage_icons.get(stage, stage.upper())
 
