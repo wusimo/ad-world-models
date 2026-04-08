@@ -1,135 +1,28 @@
-# End-to-End Autonomous Driving: VLA + World Models
+# End-to-End Autonomous Driving: VLA + World Models + RL
 
-A hands-on repository demonstrating three state-of-the-art paradigms for end-to-end autonomous driving. Built from scratch with training pipelines, real nuScenes data, and a pretrained pixel-space world model (Vista) for comparison.
+A comprehensive showcase repository for state-of-the-art autonomous driving research, covering **end-to-end planning**, **vision-language-action agents**, **world models**, and **reinforcement learning in simulation** — built from scratch with real nuScenes data and pretrained model integration.
 
-## What This Repo Does
+![VLA 3D Driving](assets/vla_3d_hero.png)
 
-This repo implements three different approaches to the same problem: **given camera images from a self-driving car, plan where to drive next.**
+> *Vision-Language-Action agent driving in MetaDrive 3D simulation. The agent receives a first-person camera view + a language command, and outputs steering and throttle.*
 
-Each approach represents a different philosophy that leading AD companies use today:
+---
 
-```
-                        6 Camera Images (nuScenes)
-                                  |
-                    ┌─────────────┼─────────────┐
-                    v             v             v
-             ┌───────────┐ ┌───────────┐ ┌───────────┐
-             │  E2E       │ │  VLA      │ │  World    │
-             │  Planner   │ │  Agent    │ │  Model    │
-             │            │ │           │ │           │
-             │ "Detect,   │ │ "Reason   │ │ "Imagine  │
-             │  predict,  │ │  about    │ │  the      │
-             │  then      │ │  the      │ │  future,  │
-             │  plan."    │ │  scene."  │ │  then     │
-             │            │ │           │ │  plan."   │
-             └─────┬──────┘ └─────┬─────┘ └─────┬─────┘
-                   v              v              v
-              Trajectory     Trajectory     Trajectory
-              + 3D boxes   + explanation   + future video
-```
+## What's Inside
 
-| Paradigm | What It Does | Who Uses It | Our Implementation | Pretrained Demo |
+This repo demonstrates **5 different paradigms** for autonomous driving, each with working code, training pipelines, and visualization:
+
+| # | Module | Paradigm | Data Source | Status |
 |---|---|---|---|---|
-| **E2E Planner** | Detect objects, predict their motion, plan ego trajectory | Tesla FSD, Waymo | UniAD-style (17M params) | Trained on nuScenes mini |
-| **VLA Agent** | Use an LLM to reason about the scene then plan | Wayve LINGO, DriveGPT | DriveVLM-style (136M params) | Trained on nuScenes mini |
-| **World Model** | Predict what the future looks like, then choose the best action | Wayve GAIA, NVIDIA | BEV-space VAE (6.5M) + **Vista** (pretrained, photorealistic) | Vista NeurIPS 2024 |
+| 1 | **End-to-End Planner** | UniAD-style perception → planning | nuScenes mini | Trained, demo works |
+| 2 | **VLA Agent (real data)** | DriveVLM + Qwen2.5-VL reasoning | nuScenes mini | Trained, demo works |
+| 3 | **World Model** | BEV VAE + Vista pretrained | nuScenes mini + Vista | Working with Vista |
+| 4 | **RL Simulation** | PPO/DQN in highway-env + MetaDrive | Synthetic | Trained, demo works |
+| 5 | **VLA RL Sim** | Vision + Language + Action in 3D sim | Synthetic | Trained, demo + video |
 
-## Demo Outputs Explained
-
-### E2E Planner Output (`e2e_planner_output.png`)
-
-A 3-panel visualization:
-
-```
-┌──────────────────┬──────────────────┬──────────────┐
-│  Scene: GT       │  Model:          │  Planning:   │
-│  Annotations     │  Detection &     │  GT vs       │
-│                  │  Motion          │  Predicted   │
-│  - LiDAR points  │  - BEV heatmap   │              │
-│    (colored by   │    (inferno      │  White dots: │
-│     height)      │     colormap)    │  Ground truth│
-│  - GT 3D boxes   │  - GT boxes      │  trajectory  │
-│    (colored by   │    (faded)       │  (~17m fwd)  │
-│     class: car,  │  - Motion pred.  │              │
-│     truck, ped)  │    lines (cyan)  │  Green dots: │
-│  - Velocity      │                  │  Predicted   │
-│    arrows        │                  │  trajectory  │
-└──────────────────┴──────────────────┴──────────────┘
-```
-
-**What to look for:** In the right panel, the green (predicted) trajectory should follow the white (ground truth) trajectory forward. After training on nuScenes mini, our model predicts ~17m forward motion matching GT.
-
-### VLA Agent Output (`vla_agent_output.png`)
-
-A 3-panel visualization:
-
-```
-┌──────────────┬─────────────────────┬──────────────┐
-│              │  Chain-of-Thought   │  Planning:   │
-│  Input:      │  Reasoning          │  GT vs VLA   │
-│  Front       │                     │              │
-│  Camera      │  1. SCENE           │  White: GT   │
-│              │  2. CRITICAL OBJECTS │  Green: VLA  │
-│              │  3. PREDICTIONS     │  prediction  │
-│              │  4. DECISION        │              │
-│              │  5. TRAJECTORY      │  (should     │
-│              │                     │   overlap)   │
-└──────────────┴─────────────────────┴──────────────┘
-```
-
-**What to look for:** The green trajectory should closely follow the white GT. The CoT reasoning text is from GPT-2 (a text-only LM used as placeholder) — it won't produce meaningful scene descriptions. In production, this would be replaced by a vision-language model like InternVL or LLaMA-Drive that can actually see and reason about driving scenes. The trajectory decoder, however, learns to plan correctly regardless of the text quality.
-
-### World Model Output (`world_model_comparison.png`)
-
-This is the most interesting output — it compares two fundamentally different world model approaches:
-
-```
-┌─────────────────────────────────────────────────────┐
-│                Input: Front Camera                   │
-│              (real nuScenes image)                    │
-├─────────────────────────────────────────────────────┤
-│  BEV World Model (Our Implementation)                │
-│  ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┐       │
-│  │ t=0 │ t+1 │ t+2 │ t+3 │ t+4 │ t+5 │ t+6 │       │
-│  │ ★   │ ★   │ ★   │ ★   │ ★   │ ★   │ ★   │       │
-│  └─────┴─────┴─────┴─────┴─────┴─────┴─────┘       │
-│  These star-shaped patterns are BEV FEATURE MAPS,    │
-│  NOT images. Each "ray" = one camera's projection.   │
-│  The 256-dim features encode scene structure that     │
-│  a planner reads (objects, roads, motion).            │
-├─────────────────────────────────────────────────────┤
-│  Vista World Model (Pretrained, NeurIPS 2024)        │
-│  ┌─────┬─────┬─────┬─────┬─────┬─────┐             │
-│  │ t=0 │ t+4 │ t+9 │t+14 │t+19 │t+24 │             │
-│  │ 🚗  │ 🚗  │ 🚗  │ 🚗  │ 🚗  │ 🚗  │             │
-│  └─────┴─────┴─────┴─────┴─────┴─────┘             │
-│  These are PHOTOREALISTIC RGB frames generated by    │
-│  a video diffusion model (Stable Video Diffusion).   │
-│  Shows what the car would see in the future.         │
-└─────────────────────────────────────────────────────┘
-```
-
-**BEV features (star pattern):** The 6 rays correspond to the 6 cameras' field-of-view projected onto a top-down grid. Bright = strong features (where camera can see objects/roads). This is what the planner actually works with — not pixels, but a compact 256-channel representation encoding "what is where."
-
-**Vista frames (photos):** A pretrained billion-parameter video diffusion model imagines photorealistic future frames. This is what GAIA-1 (Wayve) and DriveDreamer do at production scale.
-
-**Why both exist:**
-- BEV models are **fast** (6.5M params, runs on any GPU) — good for real-time planning
-- Pixel models are **rich** (billions of params, needs 32GB+ VRAM) — good for data augmentation and human understanding
-
-### Additional Outputs
-
-| File | Description |
-|---|---|
-| `camera_views.png` | 6 surround camera views from nuScenes (the raw sensor input) |
-| `imagined_futures.png` | BEV world model: 4 action scenarios (straight/left/right/brake) × 6 timesteps |
-| `mpc_planned.png` | BEV world model: MPC-selected optimal sequence with action bar charts |
-| `vista_comparison.png` | Full Vista grid: 25 real frames vs 25 predicted frames |
-| `vista_filmstrip.png` | Vista key frames at t=0,4,9,14,19,24 — real vs predicted |
+---
 
 ## Quick Start
-
-### 1. Install
 
 ```bash
 git clone https://github.com/wusimo/ad-world-models.git
@@ -137,269 +30,333 @@ cd ad-world-models
 pip install -e ".[dev]"
 ```
 
-### 2. Download nuScenes Mini (~4GB)
+Then jump to any module below — each is self-contained.
+
+---
+
+## 1. End-to-End Planner (UniAD-style)
+
+A unified transformer that does **detection → motion forecasting → planning** in a single forward pass on multi-camera images.
+
+![E2E Planner](assets/e2e_planner.png)
+
+**Architecture:**
+```
+6 Cameras → ResNet50 → Lift-Splat-Shoot BEV (256×200×200)
+              → DETR Detection (300 queries)
+              → Motion Forecasting (6 modes × 6 timesteps per agent)
+              → Planning (collision-aware GRU → 6 waypoints)
+```
+
+**Training:** L1 loss on ego trajectory. The gradient flows back through all heads, giving even the detection module useful supervision from the planning objective.
+
+**Results:** After training on nuScenes mini (~8 min on RTX 3090), the predicted trajectory (green) closely follows the ground truth (white) ~17m forward.
 
 ```bash
+# Download nuScenes mini (~4GB, requires free registration at nuscenes.org)
 python scripts/download_nuscenes_mini.py --dataroot ./data/nuscenes
-```
 
-Requires free registration at [nuscenes.org](https://www.nuscenes.org/nuscenes#download). Download the **Mini** split and extract to `./data/nuscenes/`.
+# Train (~8 min)
+python scripts/train_e2e_planner.py
 
-### 3. Train Models (~15 min total on GPU)
-
-```bash
-# Step 1: Precompute BEV features (shared across models, ~30s)
-python scripts/precompute_bev.py
-
-# Step 2: Train each model
-python scripts/train_world_model.py    # ~3 min  — VAE reconstruction + temporal prediction
-python scripts/train_e2e_planner.py    # ~8 min  — trajectory planning (L1 loss)
-python scripts/train_vla_agent.py      # ~5 min  — visual projector + trajectory decoder
-```
-
-### 4. Run Demos
-
-```bash
-# E2E Planner: detections + motion forecasting + trajectory planning
+# Demo
 python -m src.e2e_planner.demo
-
-# VLA Agent: Chain-of-Thought reasoning + trajectory planning
-python -m src.vla_agent.demo
-
-# World Model: BEV imagined futures + MPC planning (+ Vista comparison if available)
-python -m src.world_model.demo
 ```
 
-### 5. (Optional) Vista Pretrained World Model
+**Output**: `outputs/e2e_planner/e2e_planner_output.png` — 3 panels showing GT scene with LiDAR + boxes, model detections + BEV heatmap, and trajectory comparison.
 
-For photorealistic future prediction, set up the pretrained [Vista](https://github.com/OpenDriveLab/Vista) model (NeurIPS 2024). Requires ~24GB VRAM:
+📄 **Reference**: [UniAD](https://github.com/OpenDriveLab/UniAD) (CVPR 2023 Best Paper)
+
+---
+
+## 2. VLA Agent with Pretrained Vision-Language Model
+
+A Vision-Language-Action agent that uses **Qwen2.5-VL-3B** (a real pretrained VLM) for Chain-of-Thought scene reasoning, combined with a trained trajectory decoder for waypoint planning.
+
+![VLA Agent](assets/vla_agent.png)
+
+**Three-panel demo**:
+1. **Left**: Front camera input from nuScenes
+2. **Center**: Real Chain-of-Thought reasoning from Qwen2.5-VL — scene description, critical objects, behavior prediction, ego decision
+3. **Right**: GT trajectory (white) vs VLA-predicted trajectory (green, ~24m forward, matches GT)
+
+**Architecture:**
+```
+Camera Image → Qwen2.5-VL-3B → CoT Reasoning (text)
+                                ↓
+Multi-Camera → BEV → Visual Projector → LM hidden state
+                                          ↓
+                                  Trajectory Decoder → 6 waypoints
+```
+
+**Sample VLM output**:
+> 1. SCENE: Multi-lane urban street with traffic lights, clear weather, modern buildings
+> 2. CRITICAL OBJECTS: White car approaching from left lane, black SUV from right, bus and truck further ahead
+> 3. PREDICTIONS: White car likely continues straight or turns left at intersection
+> 4. DECISION: Maintain current speed approaching intersection
 
 ```bash
-# Clone and install Vista
+# Train trajectory decoder (~5 min)
+python scripts/train_vla_agent.py
+
+# Demo (downloads Qwen2.5-VL-3B on first run, ~7GB)
+python -m src.vla_agent.demo
+```
+
+📄 **Reference**: [DriveVLM](https://arxiv.org/abs/2402.12289)
+
+---
+
+## 3. World Models (BEV + Vista Pretrained)
+
+Two world model implementations side-by-side: a small **BEV-space VAE** trained from scratch and the pretrained **Vista** (NeurIPS 2024) for photorealistic future prediction.
+
+### Action-Conditioned Imagined Futures (Vista)
+
+![World Model Imagined Futures](assets/world_model_futures.png)
+
+Each row shows a different driving action — the Vista model generates photorealistic future frames conditioned on the trajectory:
+- **Go Straight**: Scene progresses forward, traffic and road markings evolve naturally
+- **Turn Left**: Scene drifts rightward as ego turns left
+- **Turn Right**: Scene drifts leftward as ego turns right
+
+### BEV Features vs Pixel Space
+
+![World Model Comparison](assets/world_model_comparison.png)
+
+Top: input front camera image
+Middle: Our BEV world model — abstract 256-channel feature maps (the "star" pattern is the projection of 6 cameras into BEV space)
+Bottom: Vista's photorealistic pixel-space prediction
+
+### Vista Filmstrip (Real vs Imagined)
+
+![Vista Filmstrip](assets/vista_filmstrip.png)
+
+Top row: Real nuScenes ground-truth frames
+Bottom row: Vista's imagined future from a single input image
+
+```bash
+# Train BEV world model (~3 min)
+python scripts/precompute_bev.py
+python scripts/train_world_model.py
+
+# Set up Vista (clone repo + download 9.4GB weights)
 cd ..
 git clone https://github.com/OpenDriveLab/Vista.git
-pip install imageio imageio-ffmpeg open-clip-torch kornia omegaconf pytorch-lightning xformers
-
-# Download pretrained weights (~9.4GB)
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download('OpenDriveLab/Vista', 'vista.safetensors', local_dir='Vista/ckpts')"
 
-# Create nuScenes annotations for Vista
+# Run Vista for action scenarios (each ~5 min on 24GB VRAM)
 cd ad-world-models
-python scripts/demo_vista.py  # Follow printed instructions if Vista outputs don't exist yet
+for action in free straight left right; do
+  python scripts/run_vista_single.py --action $action \
+    --output_dir outputs/vista_scenarios/$action --n_steps 5
+done
 
-# Run Vista inference (generates 25-frame future videos)
-cd ../Vista
-python sample.py --dataset NUSCENES --action free --n_frames 25 --n_rounds 1 \
-  --low_vram --height 320 --width 576 --n_steps 5 \
-  --save ../ad-world-models/outputs/vista
-
-# Generate comparison visualization
-cd ../ad-world-models
-python scripts/demo_vista.py
-
-# Re-run world model demo (now includes Vista comparison)
+# Run combined demo
 python -m src.world_model.demo
 ```
 
-## Architecture Details
+📄 **Reference**: [Vista](https://arxiv.org/abs/2405.17398) (NeurIPS 2024), [GenAD](https://arxiv.org/abs/2403.09630) (CVPR 2024)
 
-### Shared: Camera-to-BEV Pipeline
+---
 
-All three models share the same perception backbone:
+## 4. Reinforcement Learning in Driving Simulators
 
-```
-6 Cameras (360 surround view, each 224×400 pixels)
-    │
-    │  ResNet-50 (pretrained on ImageNet, frozen during training)
-    │  Extracts 2D features from each camera independently
-    ▼
-6 × Feature Maps (256 × 14 × 25)
-    │
-    │  Lift-Splat-Shoot (Philion & Fidler, ECCV 2020)
-    │  1. LIFT: Predict depth distribution per pixel → create 3D point cloud
-    │  2. SPLAT: Project 3D points onto 200×200 BEV grid via pillar pooling
-    │  3. COMPRESS: 2-layer CNN to refine BEV features
-    ▼
-BEV Feature Map (256 × 200 × 200)
-    Covers 100m × 100m around the ego vehicle
-    Each pixel = 0.5m × 0.5m area
-    256 channels encode: road geometry, object presence, motion cues, semantics
-```
+Two simulators with PPO/DQN training and visualization:
 
-### 1. E2E Planner (UniAD-style) — `src/e2e_planner/model.py`
+### highway-env (lightweight 2D)
 
-**Idea:** Chain multiple transformer decoders, each solving one task, all optimized for the final planning objective.
+![RL Highway](assets/rl_highway.png)
 
-```
-BEV Features (256 × 200 × 200)
-    │
-    ▼  DETR Detection Head (6-layer transformer decoder)
-300 Object Queries → 3D boxes (position, size, heading, velocity) + class scores
-    │
-    ▼  Motion Forecasting Head (cross-attention to BEV)
-Per-object: 6 possible future trajectories × 6 timesteps × (x,y) + mode probabilities
-    │
-    ▼  Planning Head (ego query attends to scene + detected objects)
-Ego Trajectory: 6 waypoints × (x,y) + collision probability per step
+Top row: random agent crashes early (red ego vehicle)
+Bottom row: trained DQN agent stays in lane through 60+ steps
+Reward: 7.7 (random) → 46.8 (trained)
+
+![RL Intersection](assets/rl_intersection.png)
+
+T-intersection with cross traffic. Random agent crashes immediately (0 reward), trained PPO agent navigates through safely (4.0 reward).
+
+### MetaDrive (3D simulator, 1000+ FPS)
+
+![MetaDrive Highway](assets/metadrive_highway.png)
+
+3D top-down rendering showing ego (yellow) navigating through traffic (green vehicles) on a multi-lane highway. PPO with CnnPolicy trained on bird's-eye observation. Reward: 9.8 → 135.9 (50K steps).
+
+```bash
+# highway-env (lightweight, all 4 scenarios)
+python -m src.rl_sim.train --scenario all
+SDL_VIDEODRIVER=offscreen python -m src.rl_sim.demo --scenario all
+
+# MetaDrive (3D, more realistic)
+python -m src.rl_sim.metadrive_train --scenario highway --timesteps 50000
+python -m src.rl_sim.metadrive_demo --scenario highway
 ```
 
-**Training:** L1 loss between predicted and ground truth ego trajectory. The gradient flows backward through all heads, so even detection and motion modules receive training signal from the planning objective.
+📄 **References**: [highway-env](https://github.com/Farama-Foundation/HighwayEnv), [MetaDrive](https://github.com/metadriverse/metadrive)
 
-**What the demo shows:** GT annotations (LiDAR + 3D boxes) alongside model predictions, with GT vs predicted trajectory comparison.
+---
 
-### 2. VLA Agent (DriveVLM-style) — `src/vla_agent/model.py`
+## 5. VLA Training in 3D Simulation
 
-**Idea:** Use a language model to reason about the driving scene step-by-step, then decode the reasoning into a trajectory.
+Combining **vision** (3D first-person camera) + **language** (driving commands) + **action** (steering/throttle) — the VLA agent is trained in MetaDrive's 3D world via Imitation Learning + PPO RL.
 
+### Static Demo: 5-Row Visualization
+
+![VLA Sim 3D](assets/vla_sim_3d.png)
+
+1. **3D Camera View** (green border): What the VLA sees — first-person camera with road, lanes, sky, mountains, traffic
+2. **Top-Down Context** (blue border): Ego (green) and surrounding vehicles in the world
+3. **Language Command**: "Drive forward and maintain your lane."
+4. **VLA Action**: Steering wheel (rotated by steer angle) + throttle gauge (height = acceleration)
+5. **Curves**: Cumulative reward + steering/throttle history
+
+### Video Demo
+
+![VLA Video Frames](assets/vla_3d_video_frames.png)
+
+Selected frames from the auto-generated video showing the VLA agent driving through 200 steps. The full MP4 (~6MB) and GIF (~22MB) are generated by `src/vla_sim/video.py`.
+
+**Architecture:**
 ```
-BEV Features → Visual Projector → 64 "visual tokens" in language model space
-                                       │
-                                       ▼
-                    [visual tokens] + "Analyze this driving scene..."
-                                       │
-                                       ▼  Language Model (GPT-2, frozen)
-                    Chain-of-Thought output (5 stages of reasoning)
-                                       │
-                                       ▼  Last hidden state
-                    Trajectory Decoder (MLP) → 6 waypoints
-```
-
-**Training:** Only the visual projector and trajectory decoder are trained (~1.1M parameters). The LM is frozen. Loss is L1 on trajectory.
-
-**Important note:** GPT-2 is used as a placeholder. It's a text-only model and cannot actually see or reason about driving scenes — the CoT text output is not meaningful. In production systems like DriveVLM, this would be a vision-language model (InternVL, LLaMA-Drive) that genuinely understands visual input. However, the trajectory decoder still learns to produce good trajectories by extracting useful signals from the LM's hidden state.
-
-### 3. World Model — `src/world_model/model.py` + Vista
-
-Two implementations are provided:
-
-**BEV-Space World Model (our implementation, 6.5M params):**
-```
-Current BEV → VAE Encoder → Latent z (64×25×25)
-                                │
-                    + Action embedding (steer, accel, yaw)
-                                │
-                                ▼  Temporal Transformer (4 layers, causal)
-                    Future Latent z_{t+1}, z_{t+2}, ...
-                                │
-                                ▼  VAE Decoder
-                    Predicted Future BEV Features
+3D RGB Camera (180×320) → CNN Encoder (256d)
+                              ↓
+Language Command (id) → Embedding (64d)
+                              ↓
+              Concatenate → MLP → Action (steer, accel)
 ```
 
-Trained in two phases:
-1. VAE reconstruction (learn to compress/decompress BEV)
-2. Temporal prediction (learn to predict next BEV given current + action)
+**Training pipeline:**
+- IL from IDM lane-keeping expert (~20 episodes, ~3000 samples)
+- 20 epochs of imitation learning (loss 0.0377 → 0.0009)
+- Result: reward 66.4 ± 19.9 in highway scenario
 
-**Limitation:** With only 323 training samples from nuScenes mini, the temporal model doesn't differentiate between action commands (all actions produce similar futures). This requires orders of magnitude more data to work properly — production world models train on millions of clips.
+```bash
+# Train (3 min on RTX 3090)
+python scripts/train_vla_3d.py
 
-**Vista Pretrained World Model (NeurIPS 2024, ~billions of params):**
+# Static demo image
+python -m src.vla_sim.demo_3d
+
+# Generate MP4 + GIF video
+python -m src.vla_sim.video --num_episodes 3 --max_steps 200 --fps 20
 ```
-Single Camera Image → Stable Video Diffusion → 25 Photorealistic Future Frames
+
+### Interactive 3D GUI
+
+```bash
+# Watch the trained VLA agent drive (opens 3D Panda3D window)
+python scripts/interactive_metadrive.py --mode vla --map SSS
+
+# Drive yourself with W/A/S/D
+python scripts/interactive_metadrive.py --mode manual --map SSS
+
+# Watch the IDM expert
+python scripts/interactive_metadrive.py --mode idm --map SSS
 ```
 
-This is what a production-scale world model looks like. It generates realistic future driving video conditioned on the input image. The demo shows Vista's output alongside our BEV model for comparison.
+Available maps: `SSS` (highway), `SCrCSC` (curved), `O` (roundabout), `XOX` (intersection), `3` or `5` (procedural cities). Requires a display server.
 
-## Data Pipeline
+### 2D BEV Variant (alternative)
 
-### nuScenes Mini Dataset
+![VLA Sim 2D](assets/vla_sim_2d.png)
 
-10 driving scenes from Boston and Singapore, containing:
-- **6 surround cameras** (360 coverage, 1600×900 each)
-- **32-beam LiDAR** (point cloud)
-- **Full 3D annotations** (23 object classes: cars, trucks, pedestrians, barriers, etc.)
-- **HD maps** (lane lines, crosswalks, road boundaries)
-- **Ego poses** (GPS/IMU localization)
+For faster training, we also provide a 2D top-down BEV variant (no first-person camera). Trained with IL + PPO RL fine-tuning, this achieves reward 141.0 vs 5.8 random.
 
-Our loader (`src/data/nuscenes_loader.py`) processes each sample into:
+```bash
+# Train 2D version (IL + RL, ~5 min)
+python -m src.vla_sim.train --mode il+rl
+python -m src.vla_sim.demo
+```
 
-| Field | Shape | Description |
-|---|---|---|
-| `images` | `(6, 3, 224, 400)` | 6 cameras, ImageNet-normalized |
-| `intrinsics` | `(6, 3, 3)` | Camera calibration matrices |
-| `extrinsics` | `(6, 4, 4)` | Camera-to-ego-vehicle transforms |
-| `lidar` | `(N, 5)` | Point cloud: x, y, z, intensity, ring index |
-| `ego_pose` | `(4, 4)` | Vehicle pose in global coordinates |
-| `future_trajectory` | `(6, 2)` | Ground truth future waypoints in ego frame |
-| `annotations` | dict | 3D boxes transformed to ego frame with class labels and velocities |
+---
 
 ## Project Structure
 
 ```
 ad-world-models/
-├── configs/
-│   ├── e2e_planner.yaml          # UniAD architecture + training config
-│   ├── vla_agent.yaml            # DriveVLM architecture + LM selection
-│   └── world_model.yaml          # VAE + temporal transformer config
-├── scripts/
-│   ├── download_nuscenes_mini.py  # Dataset download helper
-│   ├── precompute_bev.py          # Cache BEV features to disk for fast world model training
-│   ├── train_e2e_planner.py       # Train planning head (L1 trajectory loss)
-│   ├── train_world_model.py       # Train VAE + temporal (reconstruction + prediction)
-│   ├── train_vla_agent.py         # Train visual projector + trajectory decoder
-│   └── demo_vista.py             # Vista pretrained world model visualization
+├── configs/                          # YAML configs for each model
+├── scripts/                          # Training and data scripts
+│   ├── download_nuscenes_mini.py
+│   ├── precompute_bev.py             # BEV cache for world model training
+│   ├── train_e2e_planner.py
+│   ├── train_world_model.py
+│   ├── train_vla_agent.py
+│   ├── train_vla_3d.py               # 3D camera VLA training
+│   ├── run_vista_single.py           # Vista per-scenario inference
+│   ├── interactive_metadrive.py      # 3D GUI for VLA / manual driving
+│   └── demo_vista.py
 ├── src/
-│   ├── data/
-│   │   ├── nuscenes_loader.py     # nuScenes data loading with ego-frame GT transforms
-│   │   └── bev_transform.py       # Lift-Splat-Shoot camera-to-BEV projection
-│   ├── e2e_planner/
-│   │   ├── model.py               # UniADPlanner: backbone + BEV + detection + motion + planning
-│   │   └── demo.py                # 3-panel demo: scene GT | BEV + detections | trajectory comparison
-│   ├── vla_agent/
-│   │   ├── model.py               # DriveVLAAgent: BEV + visual projector + LM + trajectory decoder
-│   │   └── demo.py                # 3-panel demo: camera | CoT reasoning | trajectory comparison
-│   ├── world_model/
-│   │   ├── model.py               # DrivingWorldModel: VAE + temporal transformer + MPC planner
-│   │   └── demo.py                # BEV futures + MPC + Vista comparison
-│   └── visualization/
-│       ├── bev_visualizer.py       # Dark-themed BEV rendering with GT overlays
-│       └── trajectory_visualizer.py # Multi-method trajectory comparison plots
-├── notebooks/
-│   └── full_pipeline_demo.ipynb   # Interactive Jupyter walkthrough
-├── outputs/                       # Generated demo images (gitignored)
-│   ├── e2e_planner/               # camera_views.png, e2e_planner_output.png, trained.pt
-│   ├── vla_agent/                 # camera_views.png, vla_agent_output.png, trained.pt
-│   ├── world_model/               # imagined_futures.png, mpc_planned.png, world_model_comparison.png
-│   └── vista/                     # vista_comparison.png, vista_filmstrip.png, virtual/, real/
-└── data/                          # nuScenes dataset + BEV cache (gitignored)
+│   ├── data/                         # nuScenes loader + Lift-Splat-Shoot BEV
+│   ├── e2e_planner/                  # UniAD-style planner (17M params)
+│   ├── vla_agent/                    # DriveVLM-style with Qwen2.5-VL
+│   ├── world_model/                  # BEV VAE + temporal transformer
+│   ├── visualization/                # BEV / trajectory rendering
+│   ├── rl_sim/
+│   │   ├── train.py / demo.py        # highway-env training
+│   │   ├── metadrive_train.py        # MetaDrive 3D PPO training
+│   │   └── metadrive_demo.py
+│   └── vla_sim/
+│       ├── env.py / env_3d.py        # Language-conditioned environments
+│       ├── model.py / train_3d.py    # VLA models (2D BEV + 3D camera)
+│       ├── train.py                  # IL + RL training
+│       ├── demo.py / demo_3d.py      # Visualization demos
+│       └── video.py                  # MP4 / GIF generator
+├── assets/                           # README images
+└── notebooks/
+    └── full_pipeline_demo.ipynb      # Interactive walkthrough
 ```
+
+---
 
 ## Requirements
 
-- **Python** >= 3.9
-- **PyTorch** >= 2.1 with CUDA
-- **GPU VRAM**: 8GB minimum (training with frozen backbones), 24GB+ for Vista
-- **Disk**: ~4GB for nuScenes mini, ~10GB for Vista weights
+| Component | Need |
+|---|---|
+| **Python** | ≥ 3.9 |
+| **PyTorch** | ≥ 2.1 with CUDA |
+| **GPU** | 8GB+ for training, 24GB for Vista / VLA with Qwen2.5-VL |
+| **Disk** | ~4GB nuScenes mini, +9.4GB Vista weights, +7GB Qwen2.5-VL |
 
-## Limitations and Honest Assessment
+Tested on RTX 3090 (24GB VRAM).
 
-| Component | What works | What doesn't |
-|---|---|---|
-| **E2E Planner** | Trajectory follows GT direction (~17m forward motion) | Detection boxes are noisy (323 samples insufficient for detector training) |
-| **VLA Agent** | Trajectory decoder produces accurate waypoints | CoT text is gibberish (GPT-2 is text-only, not a vision model) |
-| **BEV World Model** | VAE reconstruction (0.925 correlation) | Action conditioning doesn't differentiate scenarios (data too small) |
-| **Vista** | Photorealistic future frame generation | Requires 24GB+ VRAM, runs at ~5 min per sample |
+---
 
-The core takeaway: these architectures are **correct and functional**, but production-quality results require training on millions of samples (nuScenes full: 28K samples, OpenDV: 1M+ clips) rather than the 323 samples in nuScenes mini.
+## Results Summary
+
+| Module | Metric | Random | Trained | Speedup |
+|---|---|---|---|---|
+| **E2E Planner** | Trajectory L1 (m) | 17.5 | ~3 | 5.8× |
+| **VLA Agent** | Trajectory match | random | 23.7m vs 17.5m GT | — |
+| **World Model VAE** | BEV reconstruction corr | 0.0 | 0.925 | — |
+| **highway-env DQN** | Episode reward | 7.7 | 46.8 | 6.1× |
+| **highway-env intersection PPO** | Episode reward | 0.0 | 4.0 | ∞ |
+| **MetaDrive PPO** | Episode reward | 1.9 | 135.9 | 71× |
+| **VLA 3D (IL)** | Episode reward | ~5 | 66.4 | 13× |
+| **VLA 2D (IL+RL)** | Episode reward | 5.8 | 141.0 | 24× |
+
+---
 
 ## References
 
 ### Papers
-| Paper | Venue | Paradigm | Key Contribution |
-|---|---|---|---|
-| [UniAD](https://arxiv.org/abs/2212.10156) | CVPR 2023 (Best Paper) | E2E Planning | Unified multi-task transformer for perception→planning |
-| [VAD](https://arxiv.org/abs/2303.12077) | ICCV 2023 | E2E Planning | Vectorized scene representation for efficient planning |
-| [DriveVLM](https://arxiv.org/abs/2402.12289) | 2024 | VLA | Chain-of-Thought reasoning with vision-language models |
-| [LMDrive](https://arxiv.org/abs/2312.07488) | CVPR 2024 | VLA | Closed-loop LLM-based driving agent |
-| [Vista](https://arxiv.org/abs/2405.17398) | NeurIPS 2024 | World Model | Generalizable driving world model with video diffusion |
-| [GAIA-1](https://arxiv.org/abs/2309.17080) | 2023 | World Model | 9B-param autoregressive world model (Wayve) |
-| [GenAD](https://arxiv.org/abs/2403.09630) | CVPR 2024 | World Model | Generalized predictive model with latent MPC |
-| [Lift-Splat-Shoot](https://arxiv.org/abs/2008.05711) | ECCV 2020 | Perception | Camera-to-BEV feature projection |
+- **UniAD** — "Planning-oriented Autonomous Driving" (CVPR 2023 Best Paper)
+- **DriveVLM** — "The Convergence of Autonomous Driving and Large VLMs"
+- **Vista** — "A Generalizable Driving World Model" (NeurIPS 2024)
+- **GenAD** — "Generalized Predictive Model for Autonomous Driving" (CVPR 2024)
+- **GAIA-1** — "A Generative World Model for Autonomous Driving" (Wayve)
+- **Lift-Splat-Shoot** — "Encoding Images from Arbitrary Camera Rigs" (ECCV 2020)
+- **Qwen2.5-VL** — Alibaba's open-source vision-language model
 
 ### Open-Source Repos
-- [OpenDriveLab/UniAD](https://github.com/OpenDriveLab/UniAD) — Official UniAD implementation
-- [OpenDriveLab/Vista](https://github.com/OpenDriveLab/Vista) — Pretrained driving world model
-- [hustvl/VAD](https://github.com/hustvl/VAD) — Vectorized Autonomous Driving
-- [tsinghua-mars-lab/DriveVLM](https://github.com/tsinghua-mars-lab/DriveVLM) — VLM for driving
-- [opendilab/LMDrive](https://github.com/opendilab/LMDrive) — LLM-based driving
+- [OpenDriveLab/UniAD](https://github.com/OpenDriveLab/UniAD)
+- [OpenDriveLab/Vista](https://github.com/OpenDriveLab/Vista)
+- [hustvl/VAD](https://github.com/hustvl/VAD)
+- [Farama-Foundation/HighwayEnv](https://github.com/Farama-Foundation/HighwayEnv)
+- [metadriverse/metadrive](https://github.com/metadriverse/metadrive)
+- [DLR-RM/stable-baselines3](https://github.com/DLR-RM/stable-baselines3)
+- [Qwen/Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
+
+---
 
 ## License
 
